@@ -17,23 +17,24 @@ def genSamples(dcOffset, frequency, Vpp, signal='sine', adj=4096, Vmax=1.8, samp
 def runSweep(startfreq, stopfreq, samples=50, dcOffset=1, Vpp=0.5):
     sweep = np.linspace(startfreq, stopfreq, samples)
     for freq in sweep:
-        print('Actual frequency: {}'.format(int(freq)))
+        # print('Actual frequency: {}'.format(int(freq)))
         CHANNEL_1_SAMPLES, dt = genSamples(dcOffset, freq, Vpp)
         # print('Samples: ', CHANNEL_1_SAMPLES)
         CHANNEL_1_FFT = fft(CHANNEL_1_SAMPLES)
         CHANNEL_1_FREQS = fftfreq(len(CHANNEL_1_FFT), d=dt)
         idx_1 = np.argmax(np.abs(CHANNEL_1_FFT[1:len(CHANNEL_1_FFT)//2]))
         freq_1 = CHANNEL_1_FREQS[idx_1]
-        print('idx: ', idx_1, 'freq: ', freq_1)
-        freqAccuracy(freq_1, int(freq))
+        # print('idx: ', idx_1, 'freq: ', freq_1)
+        # freqAccuracy(freq_1, int(freq))
+        print('[{:05.1f}, {:05.1f}, {:05.2f}%]'.format(freq, freq_1, freqAccuracy(freq_1, freq)))
 
 def freqAccuracy(guess, actual):
-    accuracy = np.abs(guess-actual)/actual
-    print(accuracy, '\n')
+    accuracy = (1-(np.abs(guess-actual)/actual))*100
+    # print('{:05.2f}% accuracy.\n'.format(accuracy))
     return accuracy
 
 
-runSweep(500, 25000)
+runSweep(500, 45000, samples=1000)
 
 # CHANNEL_1_SAMPLES, dt = genSamples(1, 500, 0.5)
 # print('Samples: ', CHANNEL_1_SAMPLES)
