@@ -65,7 +65,7 @@ class OAS:
             delay = delays.pop(0)
             for freq in self.frequencies:
                 signal = signal + self.sine(freq, phase, samples=self.nsamples, timestart=delay, endtime=self.endtime,
-                                            noise=False)
+                                            noise=True)
             self.nChSignals[i] = signal
 
     def plotChannels(self, show=True):
@@ -95,11 +95,12 @@ class OAS:
                 # fft_max_period = len(y_corr_fft)/np.argmax(abs(y_corr_fft[0:len(y_corr_fft)/2]))
                 # corr_index_low[k] = int(corr_index_max  - 1.5*fft_max_period), same for highind just change - to +
                 # if corr_index_high[k] > len(ycorr_envelope) -1 :  corr_index_high[k] =  len(ycorr_envelope)- 1
-                fftmaxp = len(xcorrelatefft)/np.argmax(np.abs(xcorrelatefft[0:len(xcorrelatefft)//2]))
-                lowcorrind = int(xcorrmaxpos - 1.5*fftmaxp)
-                if lowcorrind < 0: lowcorrind = 0
-                highcorrind = int(xcorrmaxpos + 1.5*fftmaxp)
-                if highcorrind > len(xcorrenvelope)-1: highcorrind = len(xcorrenvelope)-1
+
+                # fftmaxp = len(xcorrelatefft)/np.argmax(np.abs(xcorrelatefft[0:len(xcorrelatefft)//2]))
+                # lowcorrind = int(xcorrmaxpos - 1.5*fftmaxp)
+                # if lowcorrind < 0: lowcorrind = 0
+                # highcorrind = int(xcorrmaxpos + 1.5*fftmaxp)
+                # if highcorrind > len(xcorrenvelope)-1: highcorrind = len(xcorrenvelope)-1
 
                 # xcorr = xcorr - ones(len(xcorr)) * xcorr_center
                 tcorrelate = tcorrelate - np.ones(len(tcorrelate)) * tcorr_center
@@ -168,8 +169,13 @@ class OAS:
         uv = np.dot(pseudoinv, cdTmat)
         # print('\nuv\n', uv)
 
-        theta = np.rad2deg(np.arctan(uv[1]/uv[0]))
-        actual = np.rad2deg(np.arctan(self.sourcepos[1]/self.sourcepos[0]))
+        theta = np.rad2deg(np.arctan2(uv[1], uv[0]))
+        if theta < 0:
+            theta = theta + 180
+        elif theta >=0:
+            theta = theta - 180
+
+        actual = np.rad2deg(np.arctan2(self.sourcepos[1], self.sourcepos[0]))
         # print('pos: {}'.format(self.sourcepos))
         # print('theta calc: {}, theta actual: {}\n\n'.format(theta, actual))
         # plt.polar(theta, 1, 'ro')
@@ -201,11 +207,11 @@ def runsignalsweep(mics, xgrid, ygrid, step=2):
     # xgrid, ygrid need to be provided as [xstart, xstop] format
     for x in range(xgrid[0], xgrid[1], step):
         for y in range(ygrid[0], ygrid[1], step):
-            newobj = OAS(mics, [x, y], [5, 10, 15, 20])
+            newobj = OAS(mics, [x, y], [50, 100, 150, 200])
             newobj.runxcorr()
 
-runsignalsweep(4, [-11, 11], [-11, 11])
-
+runsignalsweep(4, [-21, 21], [-21, 21])
+#
 # OAS = OAS(4, [8, -17], [5, 10, 15, 20])
 # OAS.plotChannels()
 # OAS.runxcorr()
