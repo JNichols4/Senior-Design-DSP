@@ -4,10 +4,12 @@ from numpy.fft import fft
 import random
 import matplotlib.pyplot as plt
 from scipy.signal import correlate, hilbert
+import time
 
 
 class OAS:
-    def __init__(self, nmics, sourcepos, frequencies, nsamples = 1000, c = 330, timestart=0, endtime=1, datafile=1):
+    def __init__(self, nmics, sourcepos, frequencies, nsamples = 1000, c = 330, timestart=0, endtime=1, datafile=1,
+                 noiselevel='low'):
         self.nmics = nmics
         self.micpos = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
         self.sourcepos = sourcepos
@@ -18,8 +20,10 @@ class OAS:
         self.endtime = endtime
 
         self.datafile = datafile
+        self.noiselevel = noiselevel
 
         self.nChSignals = [[0 for x in range(nsamples)] for y in range(nmics)]
+        self.nChSnr = [[0 for x in range(nsamples)] for y in range(nmics)]
 
         self.setup()
 
@@ -48,11 +52,23 @@ class OAS:
         # print('delays: {}'.format(retList))
         return retList
 
+    def generateNoise(self, maxp = 1000):
+        if self.noiselevel=='med':
+            scalar = 2
+        elif self.noiselevel=='high':
+            scalar = 4
+        elif self.noiselevel=='vlow':
+            scalar = 0.5
+        else:
+            scalar = 1
+        # print('scalar, ',scalar)
+        return scalar*0.0008*np.asarray(random.sample(range(0,maxp),self.nsamples))
+
     def sine(self, frequency, phase, samples=1000, timestart=0, endtime=1, noise=False):
         t = np.linspace(timestart, endtime, samples)
         signal = np.sin(2*np.pi*frequency*t+phase)
         if noise:
-            signoise = 0.0008*np.asarray(random.sample(range(0,1000),samples))
+            signoise = self.generateNoise()
             return signal+signoise
         else:
             return signal
@@ -62,15 +78,27 @@ class OAS:
         phase = 0
         for i in range(self.nmics):
             signal = [0 for x in range(self.nsamples)]
+            noise = [0 for x in range(self.nsamples)]
             delay = delays.pop(0)
             for freq in self.frequencies:
-                signal = signal + self.sine(freq, phase, samples=self.nsamples, timestart=delay, endtime=self.endtime,
-                                            noise=True)
+                signal = signal + self.sine(freq, phase, samples=self.nsamples, timestart=delay,
+                                            endtime=self.endtime, noise=True)
+                # Generate another set of noise to make the signal noise independent of line noise.
+                noise = noise + self.generateNoise()
+
             self.nChSignals[i] = signal
+            self.nChSnr[i] = self.SNR(signal, noise)
+            # print(self.nChSnr[i])
 
     def plotChannels(self, show=True):
         for i in range(self.nmics):
             plt.plot(self.nChSignals[i])
+        if show:
+            plt.show()
+
+    def plotChannelFFT(self, channel=0, show=True):
+        sigfft = fft(self.nChSignals[channel])
+        plt.plot(2.0/self.nsamples * np.abs(sigfft[1:self.nsamples//2]))
         if show:
             plt.show()
 
@@ -84,10 +112,24 @@ class OAS:
             templist = []
             templist1 = []
             for j in range(self.nmics):
-                xcorrelate = correlate(self.nChSignals[i], self.nChSignals[j], mode='full')
+                # np.convolve(x, np.ones((N,)) / N, mode='valid')
+                # Re-adjust the output signal to a rolling mean
+                meanint = 10
+                xconvolve1 = np.convolve(self.nChSignals[i], np.ones((meanint,))/meanint, mode='valid')
+                xconvolve2 = np.convolve(self.nChSignals[j], np.ones((meanint,))/meanint, mode='valid')
+
+                # plt.plot(xconvolve1)
+                # plt.plot(xconvolve2)
+                # plt.show()
+
+                # xcorrelate = correlate(self.nChSignals[i], self.nChSignals[j], mode='full', method='fft')
+                xcorrelate = correlate(xconvolve1, xconvolve2, mode='full')
                 xcorrelatefft = fft(xcorrelate)
                 xcorrenvelope = np.abs(hilbert(xcorrelate))
+                # plt.plot(xcorrenvelope)
+                # plt.show()
                 xcorrmaxpos = np.argmax(xcorrenvelope)
+                # print(xcorrmaxpos)
 
                 tcorrelate = np.linspace(0, len(xcorrelate) - 1, num=len(xcorrelate))
                 tcorr_center = len(tcorrelate) / 2
@@ -183,7 +225,7 @@ class OAS:
         # plt.show()
         # opfile.write(str(theta.min()) + '\n')
 
-        print('{},{},{},{}'.format(self.sourcepos[0], self.sourcepos[1], theta.min(), actual))
+        print('{},{},{},{},snr0,{}'.format(self.sourcepos[0], self.sourcepos[1], theta.min(), actual, self.nChSnr[0]))
 
     def computeTOASamplesMatrix(self):
         arrayTOA = []
@@ -202,16 +244,38 @@ class OAS:
         # print(dist)
         return dist
 
+    def SNR(self, signal, signoise):
+        psignal = self.sigpower(signal)
+        pnoise = self.sigpower(signoise)
+        SNR = psignal / pnoise
+        return SNR
 
-def runsignalsweep(mics, xgrid, ygrid, step=2):
+    def sigpower(self, signal):
+        temparray = []
+        for n in range(self.nsamples-1):
+            # go from 0 to n-1
+            temparray.append(np.abs(signal[n])**2/self.nsamples)
+        # return the power of the signal.
+        return np.sum(temparray)
+
+
+def runsignalsweep(mics, xgrid, ygrid, step=2, noiselevel='low'):
     # xgrid, ygrid need to be provided as [xstart, xstop] format
     for x in range(xgrid[0], xgrid[1], step):
         for y in range(ygrid[0], ygrid[1], step):
-            newobj = OAS(mics, [x, y], [50, 100, 150, 200])
+            newobj = OAS(mics, [x, y], [50, 100, 150, 200], noiselevel=noiselevel)
             newobj.runxcorr()
 
-runsignalsweep(4, [-21, 21], [-21, 21])
+st = time.time()
+print('start time,{}'.format(st))
+runsignalsweep(4, [-31, 31], [-31, 31], noiselevel='high')
+et = time.time()
+print('end time,{}'.format(et))
+print('elapsed time,{}'.format(et-st))
+
+
 #
 # OAS = OAS(4, [8, -17], [5, 10, 15, 20])
 # OAS.plotChannels()
+# OAS.plotChannelFFT(channel=1)
 # OAS.runxcorr()
