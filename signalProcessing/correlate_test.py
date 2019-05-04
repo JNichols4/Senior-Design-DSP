@@ -28,7 +28,7 @@ class OAS:
         self.setup()
 
     def setup(self):
-        self.delays = self.generateDelay(self.sourcepos)
+        self.delays, self.pdev = self.generateDelay(self.sourcepos)
         self.TOA_samples = self.computeTOASamplesMatrix()
         self.setChannelSignals()
 
@@ -43,14 +43,20 @@ class OAS:
 
         # position of the minimum, lets us know which mic is the one detecting the sound first.
         rRmin = min(rR)
+        pdevs = np.divide(rRmin, rR)
+        pdevs = np.multiply(pdevs, pdevs)
+        # print(pdevs)
         rAdj = np.subtract(rR, rRmin)
         dTimes = np.divide(rAdj, self.c)
 
         retList = []
-        for item in dTimes:
-            retList.append(item)
+        retList1 = []
+        for i in range(len(dTimes)):
+            retList.append(dTimes[i])
+            retList1.append(pdevs[i])
         # print('delays: {}'.format(retList))
-        return retList
+        # print('delays: {}'.format(retList1))
+        return retList, retList1
 
     def generateNoise(self, maxp = 1000):
         if self.noiselevel=='med':
@@ -75,6 +81,7 @@ class OAS:
 
     def setChannelSignals(self):
         delays = self.delays
+        pdev = self.pdev
         phase = 0
         for i in range(self.nmics):
             signal = [0 for x in range(self.nsamples)]
@@ -85,7 +92,7 @@ class OAS:
                                             endtime=self.endtime, noise=True)
                 # Generate another set of noise to make the signal noise independent of line noise.
                 noise = noise + self.generateNoise()
-
+            signal = pdev.pop(0) * signal
             self.nChSignals[i] = signal
             self.nChSnr[i] = self.SNR(signal, noise)
             # print(self.nChSnr[i])
@@ -132,7 +139,7 @@ class OAS:
                 # print(xcorrmaxpos)
 
                 tcorrelate = np.linspace(0, len(xcorrelate) - 1, num=len(xcorrelate))
-                tcorr_center = len(tcorrelate) / 2
+                tcorr_center = len(tcorrelate) / 2.0
 
                 # fft_max_period = len(y_corr_fft)/np.argmax(abs(y_corr_fft[0:len(y_corr_fft)/2]))
                 # corr_index_low[k] = int(corr_index_max  - 1.5*fft_max_period), same for highind just change - to +
@@ -169,8 +176,11 @@ class OAS:
         # print(tcorrmat)
         subs = np.subtract(xcorrmaxmat, tcorrmat)
         minrow = subs.min(0)
-        subs = np.subtract(subs.min(0), minrow.min())
+        # print(minrow)
+        subs = np.subtract(subs.min(0), float(minrow.min()))
+        # print(subs)
         subs = np.divide(subs, (self.nsamples / (self.endtime - self.timestart)))
+        # print(subs)
         # THIS VALUE OF SUBS IS WHAT WE NEED TO COMPUTE THE DIRECTION!!
         # print('delays: {}\n'.format(subs))
         # print('delays: {}'.format(subs))
@@ -233,7 +243,7 @@ class OAS:
             temparray = []
             for j in range(self.nmics):
                 temparray.append(self.distance(self.micpos[i], self.micpos[j]) /
-                                 (self.c * (1 / (self.nsamples / (self.endtime - self.timestart)))))
+                                 (self.c * (1.0 / (self.nsamples / (self.endtime - self.timestart)))))
             arrayTOA.append(temparray)
         # print(arrayTOA)
         return np.matrix(arrayTOA)
@@ -245,9 +255,12 @@ class OAS:
         return dist
 
     def SNR(self, signal, signoise):
-        psignal = self.sigpower(signal)
-        pnoise = self.sigpower(signoise)
-        SNR = psignal / pnoise
+        try:
+            psignal = self.sigpower(signal)
+            pnoise = self.sigpower(signoise)
+            SNR = psignal / pnoise
+        except RuntimeWarning:
+            SNR = 1
         return SNR
 
     def sigpower(self, signal):
@@ -262,20 +275,20 @@ class OAS:
 def runsignalsweep(mics, xgrid, ygrid, step=2, noiselevel='low'):
     # xgrid, ygrid need to be provided as [xstart, xstop] format
     for x in range(xgrid[0], xgrid[1], step):
-        for y in range(ygrid[0], ygrid[1], step):
-            newobj = OAS(mics, [x, y], [50, 100, 150, 200], noiselevel=noiselevel)
-            newobj.runxcorr()
+        if x>1 or x<(-1):
+            for y in range(ygrid[0], ygrid[1], step):
+                if y>1 or y<(-1):
+                    newobj = OAS(mics, [x, y], [50, 100, 150, 200], noiselevel=noiselevel)
+                    newobj.runxcorr()
 
 st = time.time()
 print('start time,{}'.format(st))
-runsignalsweep(4, [-31, 31], [-31, 31], noiselevel='high')
+runsignalsweep(4, [-10, 10], [-10, 10], step=1, noiselevel='low')
 et = time.time()
 print('end time,{}'.format(et))
 print('elapsed time,{}'.format(et-st))
 
-
-#
-# OAS = OAS(4, [8, -17], [5, 10, 15, 20])
+# OAS = OAS(4, [6, 10], [5, 10, 15, 20], noiselevel='low')
 # OAS.plotChannels()
 # OAS.plotChannelFFT(channel=1)
 # OAS.runxcorr()
